@@ -1,111 +1,52 @@
 name: Build Padavan Firmware
 
 on:
-  workflow_dispatch:  # 保留手动触发
-  watch:  # 添加星标触发
+  workflow_dispatch:
+  watch:
     types: [started]
 
 env:
   REPO_URL: https://github.com/hanwckf/rt-n56u.git
   REPO_BRANCH: master
   WORK_DIR: /home/runner/work/build-padavan
-  TZ: Asia/Shanghai  # 添加时区设置
+  TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-20.04
-    if: github.event.repository.owner.id == github.event.sender.id  # 添加触发条件
+    if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
-    - name: Initialize Work Directory
+    - name: 准备工作目录
       run: |
-        sudo mkdir -p $WORK_DIR
-        sudo chown $USER:$USER $WORK_DIR
-        cd $WORK_DIR
-        echo "开始编译时间：$(date "+%Y年%m月%d日 %H:%M:%S")"  # 添加中文时间显示
+        echo "开始时间：$(date "+%Y-%m-%d %H:%M:%S")"
+        sudo mkdir -p ${{ env.WORK_DIR }}
+        sudo chown -R $USER:$USER ${{ env.WORK_DIR }}
+        cd ${{ env.WORK_DIR }}
+        echo "工作目录: $(pwd)"
 
-    - name: Initialize Build Environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: 安装编译环境
       run: |
         sudo apt-get update
         sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano \
         xxd python3-docutils gettext automake autopoint texinfo build-essential help2man \
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev \
-        wget libc-dev-bin gcc-multilib g++-multilib libssl-dev libxml-parser-perl \
-        python3 python3-distutils python3-setuptools libtool autoconf automake gcc \
-        make git device-tree-compiler
-        
-    - name: Clone Source Code
+        wget libc-dev-bin gcc-multilib g++-multilib libssl-dev libxml-parser-perl
+
+    - name: 克隆源码
       working-directory: ${{ env.WORK_DIR }}
       run: |
-        git clone --depth=1 $REPO_URL -b $REPO_BRANCH rt-n56u
+        git clone --depth=1 ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} rt-n56u
         cd rt-n56u
         git submodule update --init --recursive
+        echo "源码目录内容:"
+        ls -la
 
-    - name: Build Toolchain
-      working-directory: ${{ env.WORK_DIR }}/rt-n56u/toolchain
+    - name: 构建工具链
       run: |
+        cd ${{ env.WORK_DIR }}/rt-n56u/toolchain
+        echo "当前目录: $(pwd)"
+        echo "目录内容:"
+        ls -la
         chmod +x build_toolchain.sh
         sudo ./build_toolchain.sh
-
-    - name: Checkout Config Files
-      uses: actions/checkout@v3
-      with:
-        path: 'configs'
-        fetch-depth: 1  # 优化克隆深度
-
-    - name: Copy Config File
-      working-directory: ${{ env.WORK_DIR }}
-      run: |
-        cp ../configs/configs/${{ github.event.inputs.device }}.config rt-n56u/trunk/.config
-        echo "使用配置文件：${{ github.event.inputs.device }}.config"  # 添加配置文件提示
-
-    - name: Build Firmware
-      working-directory: ${{ env.WORK_DIR }}/rt-n56u/trunk
-      run: |
-        chmod +x clear_tree.sh build_firmware.sh
-        ./clear_tree.sh
-        ./build_firmware.sh
-        echo "固件编译完成时间：$(date "+%Y年%m月%d日 %H:%M:%S")"  # 添加完成时间
-
-    - name: Upload Build Logs
-      if: always()
-      uses: actions/upload-artifact@v3
-      with:
-        name: build_logs_${{ github.event.inputs.device }}  # 添加设备名到日志文件名
-        path: ${{ env.WORK_DIR }}/rt-n56u/trunk/*.log
-        if-no-files-found: warn
-
-    - name: Upload Firmware
-      if: success()
-      uses: actions/upload-artifact@v3
-      with:
-        name: ${{ github.event.inputs.device }}_firmware
-        path: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
-        if-no-files-found: error
-
-    - name: Generate Release Tag
-      id: tag
-      if: success()
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: success()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        name: "Padavan固件 ${{ github.event.inputs.device }} ${{ steps.tag.outputs.release_tag }}"
-        files: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
-        generate_release_notes: true
-        body: |
-          ### 构建信息
-          - 设备: ${{ github.event.inputs.device }}
-          - 时间: ${{ steps.tag.outputs.release_tag }}
-          - 分支: ${{ env.REPO_BRANCH }}
-          
-          ### 下载
-          固件文件在上方 Assets 中查看下载
