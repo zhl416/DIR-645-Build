@@ -20,6 +20,8 @@ jobs:
     steps:
     - name: 检出配置
       uses: actions/checkout@v3
+      with:
+        path: 'configs_repo'  # 将配置文件检出到指定目录
 
     - name: 初始化编译环境
       run: |
@@ -43,32 +45,35 @@ jobs:
         git clone --depth=1 ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} rt-n56u
         cd rt-n56u
         git submodule update --init --recursive
-        echo "源码目录内容:"
-        ls -la
 
-    - name: 创建工具链目录
+    - name: 准备工具链
       run: |
         cd ${{ env.WORK_DIR }}/rt-n56u
         mkdir -p toolchain
         cd toolchain
-        echo "工具链目录: $(pwd)"
-        ls -la
-
-    - name: 下载工具链
-      working-directory: ${{ env.WORK_DIR }}/rt-n56u/toolchain
-      run: |
-        echo "当前目录: $(pwd)"
         wget ${{ env.TOOLCHAIN_URL }}
         tar -xf mipsel-linux-uclibc.tar.xz
-        echo "解压后目录内容:"
-        ls -la
 
     - name: 准备编译配置
       run: |
-        cd ${{ env.WORK_DIR }}/rt-n56u/trunk
-        cp ../../configs/dir-645.config .config
-        echo "配置文件已复制"
-        ls -la .config
+        echo "=== 检查目录结构 ==="
+        pwd
+        ls -la
+        
+        echo "=== 检查配置文件 ==="
+        ls -la configs_repo/configs/
+        
+        echo "=== 复制配置文件 ==="
+        cp configs_repo/configs/dir-645.config ${{ env.WORK_DIR }}/rt-n56u/trunk/.config
+        
+        echo "=== 验证配置文件 ==="
+        ls -la ${{ env.WORK_DIR }}/rt-n56u/trunk/.config
+        
+        # 使用默认配置作为备选
+        if [ ! -f "${{ env.WORK_DIR }}/rt-n56u/trunk/.config" ]; then
+          echo "=== 使用默认配置 ==="
+          cp ${{ env.WORK_DIR }}/rt-n56u/trunk/configs/templates/dir-645.config ${{ env.WORK_DIR }}/rt-n56u/trunk/.config
+        fi
 
     - name: 编译固件
       run: |
