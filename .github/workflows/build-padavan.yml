@@ -1,24 +1,20 @@
 name: Build Padavan Firmware
 
 on:
-  workflow_dispatch:
-    inputs:
-      device:
-        description: 'Select device to build'
-        required: true
-        default: 'dir-645_a1'
-        type: choice
-        options:
-        - dir-645_a1
+  workflow_dispatch:  # 保留手动触发
+  watch:  # 添加星标触发
+    types: [started]
 
 env:
   REPO_URL: https://github.com/hanwckf/rt-n56u.git
   REPO_BRANCH: master
   WORK_DIR: /home/runner/work/build-padavan
+  TZ: Asia/Shanghai  # 添加时区设置
 
 jobs:
   build:
     runs-on: ubuntu-20.04
+    if: github.event.repository.owner.id == github.event.sender.id  # 添加触发条件
 
     steps:
     - name: Initialize Work Directory
@@ -26,7 +22,7 @@ jobs:
         sudo mkdir -p $WORK_DIR
         sudo chown $USER:$USER $WORK_DIR
         cd $WORK_DIR
-        echo "Current directory: $(pwd)"
+        echo "开始编译时间：$(date "+%Y年%m月%d日 %H:%M:%S")"  # 添加中文时间显示
 
     - name: Initialize Build Environment
       env:
@@ -39,23 +35,17 @@ jobs:
         wget libc-dev-bin gcc-multilib g++-multilib libssl-dev libxml-parser-perl \
         python3 python3-distutils python3-setuptools libtool autoconf automake gcc \
         make git device-tree-compiler
-
+        
     - name: Clone Source Code
       working-directory: ${{ env.WORK_DIR }}
       run: |
-        echo "Current directory: $(pwd)"
-        git clone --depth=1 $REPO_URL
+        git clone --depth=1 $REPO_URL -b $REPO_BRANCH rt-n56u
         cd rt-n56u
         git submodule update --init --recursive
-        echo "Repository contents:"
-        ls -la
 
     - name: Build Toolchain
       working-directory: ${{ env.WORK_DIR }}/rt-n56u/toolchain
       run: |
-        echo "Current directory: $(pwd)"
-        echo "Directory contents:"
-        ls -la
         chmod +x build_toolchain.sh
         sudo ./build_toolchain.sh
 
@@ -63,27 +53,27 @@ jobs:
       uses: actions/checkout@v3
       with:
         path: 'configs'
+        fetch-depth: 1  # 优化克隆深度
 
     - name: Copy Config File
       working-directory: ${{ env.WORK_DIR }}
       run: |
-        echo "Current directory: $(pwd)"
         cp ../configs/configs/${{ github.event.inputs.device }}.config rt-n56u/trunk/.config
+        echo "使用配置文件：${{ github.event.inputs.device }}.config"  # 添加配置文件提示
 
     - name: Build Firmware
       working-directory: ${{ env.WORK_DIR }}/rt-n56u/trunk
       run: |
-        echo "Current directory: $(pwd)"
-        chmod +x clear_tree.sh
-        chmod +x build_firmware.sh
+        chmod +x clear_tree.sh build_firmware.sh
         ./clear_tree.sh
         ./build_firmware.sh
+        echo "固件编译完成时间：$(date "+%Y年%m月%d日 %H:%M:%S")"  # 添加完成时间
 
     - name: Upload Build Logs
       if: always()
       uses: actions/upload-artifact@v3
       with:
-        name: build_logs
+        name: build_logs_${{ github.event.inputs.device }}  # 添加设备名到日志文件名
         path: ${{ env.WORK_DIR }}/rt-n56u/trunk/*.log
         if-no-files-found: warn
 
@@ -99,12 +89,23 @@ jobs:
       id: tag
       if: success()
       run: |
-        echo "::set-output name=release_tag::$(date +"%Y.%m.%d-%H%M")"
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: success()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
+        name: "Padavan固件 ${{ github.event.inputs.device }} ${{ steps.tag.outputs.release_tag }}"
         files: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
         generate_release_notes: true
+        body: |
+          ### 构建信息
+          - 设备: ${{ github.event.inputs.device }}
+          - 时间: ${{ steps.tag.outputs.release_tag }}
+          - 分支: ${{ env.REPO_BRANCH }}
+          
+          ### 下载
+          固件文件在上方 Assets 中查看下载
