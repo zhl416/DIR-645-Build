@@ -14,16 +14,19 @@ on:
 env:
   REPO_URL: https://github.com/hanwckf/rt-n56u.git
   REPO_BRANCH: master
+  WORK_DIR: /home/runner/work/build-padavan
 
 jobs:
   build:
     runs-on: ubuntu-20.04
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
+    - name: Initialize Work Directory
+      run: |
+        sudo mkdir -p $WORK_DIR
+        sudo chown $USER:$USER $WORK_DIR
+        cd $WORK_DIR
+        echo "Current directory: $(pwd)"
 
     - name: Initialize Build Environment
       env:
@@ -38,59 +41,50 @@ jobs:
         make git device-tree-compiler
 
     - name: Clone Source Code
+      working-directory: ${{ env.WORK_DIR }}
       run: |
         echo "Current directory: $(pwd)"
         git clone --depth=1 $REPO_URL
-        echo "After clone, directory contents:"
-        ls -la
-        echo "Entering rt-n56u directory..."
-        cd rt-n56u || exit 1
-        echo "rt-n56u directory contents:"
-        ls -la
-        echo "Updating submodules..."
+        cd rt-n56u
         git submodule update --init --recursive
-
-    - name: Prepare Toolchain
-      run: |
-        echo "Current directory: $(pwd)"
-        echo "Checking rt-n56u directory..."
-        ls -la rt-n56u || echo "rt-n56u directory not found"
-        echo "Checking toolchain directory..."
-        ls -la rt-n56u/toolchain || echo "toolchain directory not found"
+        echo "Repository contents:"
+        ls -la
 
     - name: Build Toolchain
+      working-directory: ${{ env.WORK_DIR }}/rt-n56u/toolchain
       run: |
-        cd rt-n56u/toolchain || exit 1
         echo "Current directory: $(pwd)"
         echo "Directory contents:"
         ls -la
-        echo "Making build_toolchain.sh executable..."
         chmod +x build_toolchain.sh
-        echo "Starting toolchain build..."
         sudo ./build_toolchain.sh
 
+    - name: Checkout Config Files
+      uses: actions/checkout@v3
+      with:
+        path: 'configs'
+
     - name: Copy Config File
-      if: success()
+      working-directory: ${{ env.WORK_DIR }}
       run: |
         echo "Current directory: $(pwd)"
-        cp configs/${{ github.event.inputs.device }}.config rt-n56u/trunk/.config
+        cp ../configs/configs/${{ github.event.inputs.device }}.config rt-n56u/trunk/.config
 
     - name: Build Firmware
-      if: success()
+      working-directory: ${{ env.WORK_DIR }}/rt-n56u/trunk
       run: |
-        cd rt-n56u/trunk
-        sudo chmod +x ./clear_tree.sh
-        sudo chmod +x ./build_firmware.sh
-        sudo ./clear_tree.sh
-        sudo ./build_firmware.sh
+        echo "Current directory: $(pwd)"
+        chmod +x clear_tree.sh
+        chmod +x build_firmware.sh
+        ./clear_tree.sh
+        ./build_firmware.sh
 
     - name: Upload Build Logs
       if: always()
       uses: actions/upload-artifact@v3
       with:
         name: build_logs
-        path: |
-          rt-n56u/trunk/*.log
+        path: ${{ env.WORK_DIR }}/rt-n56u/trunk/*.log
         if-no-files-found: warn
 
     - name: Upload Firmware
@@ -98,7 +92,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: ${{ github.event.inputs.device }}_firmware
-        path: rt-n56u/trunk/images/*.trx
+        path: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
         if-no-files-found: error
 
     - name: Generate Release Tag
@@ -112,5 +106,5 @@ jobs:
       if: success()
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
-        files: rt-n56u/trunk/images/*.trx
+        files: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
         generate_release_notes: true
