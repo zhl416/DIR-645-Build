@@ -17,44 +17,47 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
-    - name: 检查工作环境
-      run: |
-        echo "当前目录: $(pwd)"
-        echo "HOME: $HOME"
-        echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-
     - name: 准备工作目录
       run: |
-        # 创建并进入工作目录
+        echo "=== 创建工作目录 ==="
         sudo mkdir -p ${{ env.WORK_DIR }}
         sudo chown -R $USER:$USER ${{ env.WORK_DIR }}
         cd ${{ env.WORK_DIR }}
-        
-        # 克隆源码
+        echo "当前位置: $(pwd)"
+
+    - name: 克隆源码
+      run: |
+        echo "=== 克隆主仓库 ==="
+        cd ${{ env.WORK_DIR }}
         git clone --depth=1 ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} rt-n56u
+        cd rt-n56u
         
-        # 检查目录结构
-        echo "工作目录内容:"
+        echo "=== 更新子模块 ==="
+        git submodule init
+        git submodule update
+        
+        echo "=== 检查目录结构 ==="
         ls -la
         
-        # 进入源码目录并更新子模块
-        cd rt-n56u
-        git submodule update --init --recursive
+        echo "=== 手动克隆 toolchain ==="
+        git clone --depth=1 https://github.com/hanwckf/padavan-toolchain.git toolchain
         
-        # 检查工具链目录
-        echo "检查 toolchain 目录:"
+        echo "=== 检查 toolchain 目录 ==="
         ls -la toolchain/
 
     - name: 构建工具链
       run: |
-        # 使用绝对路径
+        echo "=== 开始构建工具链 ==="
         cd ${{ env.WORK_DIR }}/rt-n56u/toolchain
-        pwd
+        echo "当前位置: $(pwd)"
+        echo "目录内容:"
         ls -la
+        
         if [ -f "build_toolchain.sh" ]; then
+          echo "找到构建脚本，开始编译..."
           chmod +x build_toolchain.sh
           sudo ./build_toolchain.sh
         else
-          echo "错误: build_toolchain.sh 文件不存在!"
+          echo "错误: build_toolchain.sh 不存在!"
           exit 1
         fi
