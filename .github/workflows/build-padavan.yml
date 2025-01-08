@@ -39,24 +39,48 @@ jobs:
 
     - name: Clone Source Code
       run: |
+        echo "Current directory: $(pwd)"
         git clone --depth=1 $REPO_URL
-        cd rt-n56u
-        git submodule update --init --recursive
-        echo "Checking repository structure:"
+        echo "After clone, directory contents:"
         ls -la
+        echo "Entering rt-n56u directory..."
+        cd rt-n56u || exit 1
+        echo "rt-n56u directory contents:"
+        ls -la
+        echo "Updating submodules..."
+        git submodule update --init --recursive
+
+    - name: Prepare Toolchain
+      run: |
+        echo "Current directory: $(pwd)"
+        echo "Checking rt-n56u directory..."
+        ls -la rt-n56u || echo "rt-n56u directory not found"
+        echo "Checking toolchain directory..."
+        ls -la rt-n56u/toolchain || echo "toolchain directory not found"
 
     - name: Build Toolchain
       run: |
-        cd rt-n56u/toolchain
+        cd rt-n56u/toolchain || exit 1
+        echo "Current directory: $(pwd)"
+        echo "Directory contents:"
+        ls -la
+        echo "Making build_toolchain.sh executable..."
+        chmod +x build_toolchain.sh
+        echo "Starting toolchain build..."
         sudo ./build_toolchain.sh
 
     - name: Copy Config File
+      if: success()
       run: |
+        echo "Current directory: $(pwd)"
         cp configs/${{ github.event.inputs.device }}.config rt-n56u/trunk/.config
 
     - name: Build Firmware
+      if: success()
       run: |
         cd rt-n56u/trunk
+        sudo chmod +x ./clear_tree.sh
+        sudo chmod +x ./build_firmware.sh
         sudo ./clear_tree.sh
         sudo ./build_firmware.sh
 
