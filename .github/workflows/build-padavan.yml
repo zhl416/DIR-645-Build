@@ -18,64 +18,47 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
-    - name: 准备工作目录
-      run: |
-        echo "=== 创建工作目录 ==="
-        sudo mkdir -p ${{ env.WORK_DIR }}
-        sudo chown -R $USER:$USER ${{ env.WORK_DIR }}
-        cd ${{ env.WORK_DIR }}
+    # ... 前面的步骤保持不变 ...
 
-    - name: 克隆源码
+    - name: 准备固件配置
       run: |
-        echo "=== 克隆主仓库 ==="
-        cd ${{ env.WORK_DIR }}
-        git clone --depth=1 ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} rt-n56u
-        cd rt-n56u
+        echo "=== 准备编译配置 ==="
+        cd ${{ env.WORK_DIR }}/rt-n56u/trunk
+        cp configs/templates/dir-645.config .config
+        echo "配置文件已复制"
         
-        echo "=== 更新子模块 ==="
-        git submodule init
-        git submodule update
+    - name: 编译固件
+      run: |
+        echo "=== 开始编译固件 ==="
+        cd ${{ env.WORK_DIR }}/rt-n56u/trunk
+        echo "清理编译环境..."
+        ./clear_tree.sh
         
-        echo "=== 准备工具链 ==="
-        mkdir -p toolchain
-        cd toolchain
+        echo "开始编译..."
+        fakeroot ./build_firmware.sh
         
-        echo "=== 下载预编译工具链 ==="
-        wget ${{ env.TOOLCHAIN_URL }}
-        
-        echo "=== 解压工具链 ==="
-        tar -xf mipsel-linux-uclibc.tar.xz
-        
-        echo "=== 检查工具链目录 ==="
-        ls -la
-        
-        echo "=== 创建编译脚本 ==="
-        cat > build_toolchain.sh << 'EOF'
-        #!/bin/bash
-        
-        if [ -d "mipsel-linux-uclibc" ]; then
-          echo "工具链已存在，跳过编译"
-          exit 0
-        else
-          echo "错误：工具链目录不存在！"
-          exit 1
-        fi
-        EOF
-        
-        chmod +x build_toolchain.sh
+        echo "检查编译结果..."
+        ls -la images/
 
-    - name: 构建工具链
-      run: |
-        echo "=== 开始构建工具链 ==="
-        cd ${{ env.WORK_DIR }}/rt-n56u/toolchain
-        echo "当前位置: $(pwd)"
-        echo "目录内容:"
-        ls -la
-        
-        if [ -f "build_toolchain.sh" ]; then
-          echo "执行构建脚本..."
-          sudo ./build_toolchain.sh
-        else
-          echo "错误: build_toolchain.sh 不存在!"
-          exit 1
-        fi
+    - name: 上传固件
+      uses: actions/upload-artifact@v3
+      with:
+        name: Padavan_firmware
+        path: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
+        if-no-files-found: error
+
+    - name: 创建发布
+      uses: softprops/action-gh-release@v1
+      if: success()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: release-${{ github.run_number }}
+        name: Padavan固件 ${{ github.run_number }}
+        files: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
+        body: |
+          ### 自动编译完成
+          - 编译时间：${{ env.TZ }}
+          - 编译版本：${{ github.run_number }}
+          
+          固件文件在上方 Assets 中下载
