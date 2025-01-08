@@ -8,6 +8,7 @@ on:
 env:
   REPO_URL: https://github.com/hanwckf/rt-n56u.git
   REPO_BRANCH: master
+  TOOLCHAIN_URL: https://github.com/hanwckf/padavan-toolchain/releases/download/v1.1/mipsel-linux-uclibc.tar.xz
   WORK_DIR: /home/runner/work/build-padavan
   TZ: Asia/Shanghai
 
@@ -23,7 +24,6 @@ jobs:
         sudo mkdir -p ${{ env.WORK_DIR }}
         sudo chown -R $USER:$USER ${{ env.WORK_DIR }}
         cd ${{ env.WORK_DIR }}
-        echo "当前位置: $(pwd)"
 
     - name: 克隆源码
       run: |
@@ -36,14 +36,33 @@ jobs:
         git submodule init
         git submodule update
         
-        echo "=== 检查目录结构 ==="
+        echo "=== 准备工具链 ==="
+        mkdir -p toolchain
+        cd toolchain
+        
+        echo "=== 下载预编译工具链 ==="
+        wget ${{ env.TOOLCHAIN_URL }}
+        
+        echo "=== 解压工具链 ==="
+        tar -xf mipsel-linux-uclibc.tar.xz
+        
+        echo "=== 检查工具链目录 ==="
         ls -la
         
-        echo "=== 手动克隆 toolchain ==="
-        git clone --depth=1 https://github.com/hanwckf/padavan-toolchain.git toolchain
+        echo "=== 创建编译脚本 ==="
+        cat > build_toolchain.sh << 'EOF'
+        #!/bin/bash
         
-        echo "=== 检查 toolchain 目录 ==="
-        ls -la toolchain/
+        if [ -d "mipsel-linux-uclibc" ]; then
+          echo "工具链已存在，跳过编译"
+          exit 0
+        else
+          echo "错误：工具链目录不存在！"
+          exit 1
+        fi
+        EOF
+        
+        chmod +x build_toolchain.sh
 
     - name: 构建工具链
       run: |
@@ -54,8 +73,7 @@ jobs:
         ls -la
         
         if [ -f "build_toolchain.sh" ]; then
-          echo "找到构建脚本，开始编译..."
-          chmod +x build_toolchain.sh
+          echo "执行构建脚本..."
           sudo ./build_toolchain.sh
         else
           echo "错误: build_toolchain.sh 不存在!"
