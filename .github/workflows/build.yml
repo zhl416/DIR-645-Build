@@ -1,0 +1,80 @@
+name: 构建 DIR-645 固件
+
+on:
+  workflow_dispatch:
+  watch:
+    types: [started]
+
+env:
+  REPO_URL: https://github.com/hanwckf/rt-n56u.git
+  REPO_BRANCH: master
+  TOOLCHAIN_URL: https://github.com/hanwckf/padavan-toolchain/releases/download/v1.1/mipsel-linux-uclibc.tar.xz
+  WORK_DIR: /home/runner/work/build-padavan
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+    - name: 检出配置
+      uses: actions/checkout@v3
+
+    - name: 初始化编译环境
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano \
+        xxd python3-docutils gettext automake autopoint texinfo build-essential help2man \
+        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev \
+        wget libc-dev-bin gcc-multilib g++-multilib libssl-dev libxml-parser-perl
+
+    - name: 准备源码
+      run: |
+        mkdir -p $WORK_DIR
+        cd $WORK_DIR
+        git clone --depth=1 $REPO_URL -b $REPO_BRANCH rt-n56u
+        cd rt-n56u
+        git submodule update --init --recursive
+
+    - name: 准备工具链
+      run: |
+        cd $WORK_DIR/rt-n56u/toolchain
+        wget $TOOLCHAIN_URL
+        tar -xf mipsel-linux-uclibc.tar.xz
+
+    - name: 复制配置文件
+      run: |
+        cp configs/dir-645.config $WORK_DIR/rt-n56u/trunk/.config
+
+    - name: 编译固件
+      run: |
+        cd $WORK_DIR/rt-n56u/trunk
+        chmod +x ./clear_tree.sh
+        chmod +x ./build_firmware.sh
+        ./clear_tree.sh
+        fakeroot ./build_firmware.sh
+
+    - name: 上传固件
+      uses: actions/upload-artifact@v3
+      with:
+        name: DIR645_firmware
+        path: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
+        if-no-files-found: error
+
+    - name: 发布固件
+      uses: softprops/action-gh-release@v1
+      if: success()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: build-${{ github.run_number }}
+        name: DIR-645 固件 Build-${{ github.run_number }}
+        files: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
+        body: |
+          ### DIR-645 A1 固件构建
+          
+          - 构建时间：${{ env.TZ }}
+          - 构建版本：${{ github.run_number }}
+          
+          固件文件在上方 Assets 中下载
