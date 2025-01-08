@@ -29,27 +29,50 @@ jobs:
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev \
         wget libc-dev-bin gcc-multilib g++-multilib libssl-dev libxml-parser-perl
 
-    - name: 准备源码
+    - name: 准备工作目录
       run: |
-        mkdir -p $WORK_DIR
-        cd $WORK_DIR
-        git clone --depth=1 $REPO_URL -b $REPO_BRANCH rt-n56u
+        sudo mkdir -p ${{ env.WORK_DIR }}
+        sudo chown -R $USER:$USER ${{ env.WORK_DIR }}
+        cd ${{ env.WORK_DIR }}
+        echo "工作目录: $(pwd)"
+        ls -la
+
+    - name: 克隆源码
+      run: |
+        cd ${{ env.WORK_DIR }}
+        git clone --depth=1 ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} rt-n56u
         cd rt-n56u
         git submodule update --init --recursive
+        echo "源码目录内容:"
+        ls -la
 
-    - name: 准备工具链
+    - name: 创建工具链目录
       run: |
-        cd $WORK_DIR/rt-n56u/toolchain
-        wget $TOOLCHAIN_URL
+        cd ${{ env.WORK_DIR }}/rt-n56u
+        mkdir -p toolchain
+        cd toolchain
+        echo "工具链目录: $(pwd)"
+        ls -la
+
+    - name: 下载工具链
+      working-directory: ${{ env.WORK_DIR }}/rt-n56u/toolchain
+      run: |
+        echo "当前目录: $(pwd)"
+        wget ${{ env.TOOLCHAIN_URL }}
         tar -xf mipsel-linux-uclibc.tar.xz
+        echo "解压后目录内容:"
+        ls -la
 
-    - name: 复制配置文件
+    - name: 准备编译配置
       run: |
-        cp configs/dir-645.config $WORK_DIR/rt-n56u/trunk/.config
+        cd ${{ env.WORK_DIR }}/rt-n56u/trunk
+        cp ../../configs/dir-645.config .config
+        echo "配置文件已复制"
+        ls -la .config
 
     - name: 编译固件
       run: |
-        cd $WORK_DIR/rt-n56u/trunk
+        cd ${{ env.WORK_DIR }}/rt-n56u/trunk
         chmod +x ./clear_tree.sh
         chmod +x ./build_firmware.sh
         ./clear_tree.sh
