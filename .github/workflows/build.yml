@@ -1,4 +1,4 @@
-name: 构建 DIR-645 固件
+name: 构建 DIR-645 Padavan 固件
 
 on:
   workflow_dispatch:
@@ -8,8 +8,7 @@ on:
 env:
   REPO_URL: https://github.com/hanwckf/rt-n56u.git
   REPO_BRANCH: master
-  TOOLCHAIN_URL: https://github.com/hanwckf/padavan-toolchain/releases/download/v1.1/mipsel-linux-uclibc.tar.xz
-  WORK_DIR: /home/runner/work/build-padavan
+  WORK_DIR: /opt/rt-n56u
   TZ: Asia/Shanghai
 
 jobs:
@@ -20,89 +19,73 @@ jobs:
     steps:
     - name: 检出配置
       uses: actions/checkout@v3
-      with:
-        path: 'configs_repo'  # 将配置文件检出到指定目录
 
-    - name: 初始化编译环境
+    - name: 安装编译依赖
       run: |
         sudo apt-get update
-        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano \
-        xxd python3-docutils gettext automake autopoint texinfo build-essential help2man \
-        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev \
-        wget libc-dev-bin gcc-multilib g++-multilib libssl-dev libxml-parser-perl
-
-    - name: 准备工作目录
-      run: |
-        sudo mkdir -p ${{ env.WORK_DIR }}
-        sudo chown -R $USER:$USER ${{ env.WORK_DIR }}
-        cd ${{ env.WORK_DIR }}
-        echo "工作目录: $(pwd)"
-        ls -la
+        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
+        fakeroot kmod cpio git python3-docutils gettext automake autopoint \
+        texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev \
+        libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin
 
     - name: 克隆源码
       run: |
-        cd ${{ env.WORK_DIR }}
-        git clone --depth=1 ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} rt-n56u
-        cd rt-n56u
+        sudo mkdir -p $WORK_DIR
+        sudo chown -R $USER:$USER $WORK_DIR
+        git clone --depth=1 $REPO_URL $WORK_DIR
+        cd $WORK_DIR
         git submodule update --init --recursive
-
-    - name: 准备工具链
-      run: |
-        cd ${{ env.WORK_DIR }}/rt-n56u
-        mkdir -p toolchain
-        cd toolchain
-        wget ${{ env.TOOLCHAIN_URL }}
-        tar -xf mipsel-linux-uclibc.tar.xz
-
-    - name: 准备编译配置
-      run: |
-        echo "=== 检查目录结构 ==="
-        pwd
+        
+        echo "源码目录内容:"
         ls -la
-        
-        echo "=== 检查配置文件 ==="
-        ls -la configs_repo/configs/
-        
-        echo "=== 复制配置文件 ==="
-        cp configs_repo/configs/dir-645.config ${{ env.WORK_DIR }}/rt-n56u/trunk/.config
-        
-        echo "=== 验证配置文件 ==="
-        ls -la ${{ env.WORK_DIR }}/rt-n56u/trunk/.config
-        
-        # 使用默认配置作为备选
-        if [ ! -f "${{ env.WORK_DIR }}/rt-n56u/trunk/.config" ]; then
-          echo "=== 使用默认配置 ==="
-          cp ${{ env.WORK_DIR }}/rt-n56u/trunk/configs/templates/dir-645.config ${{ env.WORK_DIR }}/rt-n56u/trunk/.config
-        fi
 
-    - name: 编译固件
+    - name: 准备设备配置
       run: |
-        cd ${{ env.WORK_DIR }}/rt-n56u/trunk
-        chmod +x ./clear_tree.sh
-        chmod +x ./build_firmware.sh
-        ./clear_tree.sh
-        fakeroot ./build_firmware.sh
+        echo "创建设备配置目录..."
+        mkdir -p $WORK_DIR/trunk/configs/boards/DIR-645
+        
+        echo "复制板级配置..."
+        cp -f configs/boards/DIR-645/* $WORK_DIR/trunk/configs/boards/DIR-645/
+        
+        echo "复制模板配置..."
+        cp -f configs/templates/dir-645.config $WORK_DIR/trunk/configs/templates/
+        
+        echo "检查配置文件:"
+        ls -la $WORK_DIR/trunk/configs/boards/DIR-645/
+        ls -la $WORK_DIR/trunk/configs/templates/dir-645.config
+
+    - name: 准备编译
+      run: |
+        cd $WORK_DIR/trunk
+        cp configs/templates/dir-645.config .config
+        
+        echo "检查编译配置:"
+        ls -la .config
+
+    - name: 开始编译
+      run: |
+        cd $WORK_DIR/trunk
+        fakeroot ./build_firmware_modify DIR-645
 
     - name: 上传固件
       uses: actions/upload-artifact@v3
       with:
-        name: DIR645_firmware
-        path: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
+        name: DIR645_Padavan
+        path: ${{ env.WORK_DIR }}/trunk/images/*.trx
         if-no-files-found: error
 
-    - name: 发布固件
+    - name: 创建发布
       uses: softprops/action-gh-release@v1
       if: success()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: build-${{ github.run_number }}
-        name: DIR-645 固件 Build-${{ github.run_number }}
-        files: ${{ env.WORK_DIR }}/rt-n56u/trunk/images/*.trx
+        tag_name: release-${{ github.run_number }}
+        name: DIR-645 Padavan Build-${{ github.run_number }}
+        files: ${{ env.WORK_DIR }}/trunk/images/*.trx
         body: |
-          ### DIR-645 A1 固件构建
+          ### DIR-645 A1 Padavan 固件
           
-          - 构建时间：${{ env.TZ }}
-          - 构建版本：${{ github.run_number }}
-          
-          固件文件在上方 Assets 中下载
+          - 编译时间：${{ env.TZ }}
+          - 版本号：${{ github.run_number }}
+          - 源码：[hanwckf/rt-n56u](https://github.com/hanwckf/rt-n56u)
